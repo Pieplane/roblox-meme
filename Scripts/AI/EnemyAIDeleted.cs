@@ -48,8 +48,8 @@ public class EnemyAIDeleted : MonoBehaviour
     private Vector3 lastKnownPlayerPosition;
     private bool isGoingToLastKnownPosition = false;
 
-    private float patrolWaitTime = 1f;
-    private float patrolTimer = 0f;
+    //private float patrolWaitTime = 1f;
+    //private float patrolTimer = 0f;
 
     public GameObject timeline;
     ThirdPersonController controller;

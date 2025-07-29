@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
+using UnityEngine.Windows;
 
 public enum GameState
 {
@@ -38,12 +39,19 @@ public class GameManager : MonoBehaviour
 
     [SerializeField] private GameObject mobileInputGO;
 
+    public string CurrentNPCName { get; set; }
+    private Dictionary<string, NPCInteraction> npcRegistry = new Dictionary<string, NPCInteraction>();
+
+    [SerializeField] private GameObject bananaCat;
+
+
     private void Awake()
     {
         //Singelton
         if (Instance == null)
         {
             Instance = this;
+            EnableEnvironmentSubscription();
             //DontDestroyOnLoad(gameObject);
             //SceneManager.sceneLoaded += OnSceneLoaded; // ✅ Подписка
         }
@@ -58,38 +66,28 @@ public class GameManager : MonoBehaviour
     //}
     private void Start()
     {
+        YandexGameplayEvents.Instance?.OnGameplayStart();
+    }
+    public void EnableEnvironmentSubscription()
+    {
+        EnvironmentLoader.OnEnvironmentLoaded -= SpawnPlayerWhenReady; // на всякий случай
+        EnvironmentLoader.OnEnvironmentLoaded += SpawnPlayerWhenReady;
+    }
+
+    public void DisableEnvironmentSubscription()
+    {
+        EnvironmentLoader.OnEnvironmentLoaded -= SpawnPlayerWhenReady;
+    }
+    private void SpawnPlayerWhenReady()
+    {
         initialPosition = playerCameraRoot.transform.localPosition;
         initialRotation = playerCameraRoot.transform.localRotation;
         lastID = CheckpointManager.Instance.GetLastCheckpointID();
         Debug.Log($"I Will loaded by lastID: {lastID}");
         EnterID(lastID);
         SetCursor(false);
+        DisableEnvironmentSubscription(); 
     }
-    private void Update()
-    {
-        //if (currentState == GameState.WaitingToWake && Input.GetKeyDown(KeyCode.E))
-        //{
-        //    Debug.Log("Нажимаешь Е, готов проснуться");
-        //    TransitionToState(GameState.WaikingUp);
-        //}
-        //Debug.Log($"State: {currentState}");
-    }
-    //private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-    //{
-    //    Debug.Log($"Сцена загружена: {scene.name}");
-
-    //    if (scene.name != "Menu") // или проверь конкретные игровые сцены
-    //    {
-    //        lastID = CheckpointManager.Instance.GetLastCheckpointID();
-    //        EnterID(lastID);
-    //        SetCursor(false);
-    //    }
-    //}
-    //public void WaikungUp()
-    //{
-    //    Debug.Log("Нажимаешь Е, готов проснуться");
-    //    TransitionToState(GameState.WaikingUp);
-    //}
     public void TransitionToState(GameState newState)
     {
         SetCursor(false);
@@ -113,6 +111,15 @@ public class GameManager : MonoBehaviour
         }
         respawnEffect.transform.position = spawnPoint.position;
         respawnEffect.gameObject.SetActive(true);
+        AudioManager.Instance?.Play("Respawn");
+
+        DialogueManager.Instance?.EndDialogue();
+        if (TryGetNPC(CurrentNPCName, out var npc))
+        {
+            npc.ForceExitRange(); // или любое другое действие
+        }
+
+
 
         // 1. Деактивируем CharacterController перед перемещением
         CharacterController cc = player.GetComponent<CharacterController>();
@@ -158,6 +165,12 @@ public class GameManager : MonoBehaviour
         var controller = player.GetComponent<ThirdPersonController>();
         if (controller != null)
         {
+            if (!controller.enabled)
+            {
+                controller.enabled = true;
+                //controller.ResetJumpBuffer();
+            }
+
             controller.canJump = !inNoJumpZone;
         }
 
@@ -167,9 +180,28 @@ public class GameManager : MonoBehaviour
         {
             input.enabled = true;
         }
-        Debug.Log("Игрок успешно телепортирован на чекпоинт: " + checkpointID);
+        //Debug.Log("Игрок успешно телепортирован на чекпоинт: " + checkpointID);
+
+        //AudioManager.Instance?.StopAll();
+        AudioManager.Instance?.StopPlay("MeetBarry");
+        AudioManager.Instance?.StopPlay("Scary1");
+        AudioManager.Instance?.StopPlay("Cats1");
+        AudioManager.Instance?.StopPlay("Cats2");
+        AudioManager.Instance?.StopPlay("Answer");
+        if (AudioManager.Instance != null && !AudioManager.Instance.IsPlaying("GameMusic"))
+        {
+            AudioManager.Instance?.Play("GameMusic");
+            Debug.Log("Попал сюда");
+        }
+
 
         EnsureMobileInput();
+        EnsureMobileInputInAddition();
+
+        if (bananaCat != null && !bananaCat.activeSelf)
+        {
+            bananaCat.SetActive(true);
+        }
     }
     private void EnsureMobileInput()
     {
@@ -182,18 +214,42 @@ public class GameManager : MonoBehaviour
             Debug.Log("✅ MobileInput включён автоматически.");
         }
     }
+    private void EnsureMobileInputInAddition()
+    {
+        if (mobileInputGO != null)
+        {
+            Transform joystick = mobileInputGO.transform.GetChild(0);
+            if (joystick != null)
+            {
+                var inputMobile = joystick.GetComponent<MobileInputOverride>();
+                if (inputMobile != null && !inputMobile.enabled)
+                {
+                    inputMobile.enabled = true;
+                }
+                var rotationMobile = joystick.GetComponent<MobileRotationOverride>();
+                if (rotationMobile != null && !rotationMobile.enabled)
+                {
+                    rotationMobile.enabled = true;
+                }
+                //Debug.Log("✅ MobileInput проверен дополнительно и включён автоматически.");
+            }
+        }
+    }
     public void EnterID(string checkpointID)
     {
         switch (checkpointID)
         {
             case "WakeUp":
-                Debug.Log("Просыпаюсь");
+                //Debug.Log("Просыпаюсь");
+                //AudioManager.Instance?.StopPlay("WakeUp");
+                //AudioManager.Instance?.Play("GameMusic");
                 TransitionToState(GameState.Playing);
                 CutsceneManager.Instance.StartCutscene("WakeUp");
                 //Initial cutscene
                 break;
             case "Started":
                 Debug.Log("Уже проснулся, загружаю начальную комнату");
+
                 TransitionToState(GameState.Playing);
                 CutsceneManager.Instance.StartCutscene("Cutcsene_Started");
                 StagePreparation(checkpointID, player);
@@ -286,10 +342,13 @@ public class GameManager : MonoBehaviour
             case "Toilet":
                 TransitionToState(GameState.Playing);
                 CutsceneManager.Instance.StartCutscene("Toilet");
+                //CutsceneManager.Instance.StartCutscene("Safe");
                 StagePreparation(checkpointID, player);
                 break;
             default:
                 Debug.Log("Нет сохраненных чекпоинтов загружаю самое начало");
+                AudioManager.Instance?.StopPlay("GameMusic");
+                AudioManager.Instance?.Play("WakeUp");
                 TransitionToState(GameState.WaitingToWake);
                 CutsceneManager.Instance.StartCutscene("Sleep");
                 //TransitionToState(GameState.Sleeping);
@@ -351,24 +410,33 @@ public class GameManager : MonoBehaviour
     public void ResetTriggeredCutscenes()
     {
         triggeredCutcsenes.Clear();
-        Debug.Log("Сброшены все флаги запущенных катсцен");
+        //Debug.Log("Сброшены все флаги запущенных катсцен");
     }
     private void OnApplicationFocus(bool hasFocus)
     {
         if (!hasFocus)
         {
             Debug.Log("Потеря фокуса — ставлю игру на паузу");
-            if (CutsceneManager.activeCutscene != null)
-            {
-                Time.timeScale = 0f; // ставим всё на паузу
-            }
+            YandexGameplayEvents.Instance?.OnGameplayStop();
+            //if (CutsceneManager.activeCutscene != null)
+            //{
+            //    Time.timeScale = 0f; // ставим всё на паузу
+            //}
+            Time.timeScale = 0f; // ставим всё на паузу
         }
         else
         {
-            Debug.Log("Фокус вернулся — продолжаю игру");
-            if (CutsceneManager.activeCutscene != null)
+            // ❗ НЕ снимаем паузу, если меню открыто
+            if (PauseMenuManager.Instance != null && (PauseMenuManager.Instance.IsMenuOpen || PauseMenuManager.Instance.IsRewardnPanelActive || PauseMenuManager.Instance.IsRewardnPanelActiveAfterJump))
             {
+                Debug.Log("Меню открыто — паузу НЕ снимаю");
+                SetCursor(true);
+            }
+            else
+            {
+                Debug.Log("Фокус пойман возобновляю игру");
                 Time.timeScale = 1f; // снимаем паузу
+                YandexGameplayEvents.Instance?.OnGameplayStart();
             }
 
             if (currentState == GameState.Dialogue)
@@ -422,6 +490,7 @@ public class GameManager : MonoBehaviour
             {
                 string firstID = orderedIDs[0];
                 Debug.Log("Нет достигнутых чекпоинтов, телепортирую на первый: " + firstID);
+                EnvironmentLoader.Instance?.LoadEnvironmentByCheckpoint(firstID);
                 EnterID(firstID);
             }
             else
@@ -436,6 +505,7 @@ public class GameManager : MonoBehaviour
         {
             string nextID = orderedIDs[nextIndex];
             Debug.Log("Телепортирую на следующий чекпоинт: " + nextID);
+            EnvironmentLoader.Instance?.LoadEnvironmentByCheckpoint(nextID);
             EnterID(nextID);
             CheckpointManager.Instance.SetCheckpoint(nextID); // опционально, если ты хочешь его сразу сохранить
         }
@@ -447,5 +517,24 @@ public class GameManager : MonoBehaviour
     public GameState GetCurrentState()
     {
         return currentState;
+    }
+    public bool TryGetNPC(string name, out NPCInteraction npc)
+    {
+        npc = null;
+        if (string.IsNullOrEmpty(name))
+        {
+            //Debug.LogWarning("TryGetNPC получил пустое имя");
+            return false;
+        }
+
+        return npcRegistry.TryGetValue(name, out npc);
+    }
+    public void RegisterNPC(NPCInteraction npc, string name)
+    {
+        if (!npcRegistry.ContainsKey(name))
+        {
+            npcRegistry.Add(name, npc);
+            //Debug.Log("NPC зарегистрирован: " + name);
+        }
     }
 }

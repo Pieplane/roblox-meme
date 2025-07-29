@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
+using System;
 
 [System.Serializable]
 public class SpawnPointEntry
@@ -20,6 +21,9 @@ public class CheckpointManager : MonoBehaviour
 
     private int currentCheckpointOrder = 1;
 
+    public static event Action OnCheckpointsLoaded;
+    public static event Action<string> OnCheckpointChanged;
+
     private void Awake()
     {
         if (Instance == null) Instance = this;
@@ -32,17 +36,18 @@ public class CheckpointManager : MonoBehaviour
                 spawnPointsDict.Add(entry.checkpointID, entry.spawnTransform);
             }
         }
+        LoadCheckpoints();
     }
 
     private void Start()
     {
         //PlayerPrefs.DeleteAll();
         //PlayerPrefs.Save();
-        LoadCheckpoints();
+        //LoadCheckpoints();
 
         foreach (var pair in checkpointData)
         {
-            Debug.Log($"Чекпоинт: {pair.Key}, Активен: {pair.Value}");
+            //Debug.Log($"Чекпоинт: {pair.Key}, Активен: {pair.Value}");
         }
         Debug.Log($"Max checkpoint: {GetLastCheckpointID()}");
     }
@@ -69,8 +74,10 @@ public class CheckpointManager : MonoBehaviour
         }
         
 
-        Debug.Log($"Достигнута позиция: {checkpointID} с порядком {checkpointData[checkpointID]}");
+        //Debug.Log($"Достигнута позиция: {checkpointID} с порядком {checkpointData[checkpointID]}");
         SaveCheckpoints();
+
+        OnCheckpointChanged?.Invoke(checkpointID); // 🔔 вызываем событие
     }
     public string GetLastCheckpointID()
     {
@@ -100,7 +107,7 @@ public class CheckpointManager : MonoBehaviour
 
         string allCheckpoints = string.Join(",", allKeys);
         PlayerPrefs.SetString("AllCheckpoints", allCheckpoints);
-        Debug.Log($"Список сохраненных чекпоинтов: {allCheckpoints}");
+        //Debug.Log($"Список сохраненных чекпоинтов: {allCheckpoints}");
     }
 
     public void LoadCheckpoints()
@@ -128,6 +135,7 @@ public class CheckpointManager : MonoBehaviour
         }
 
         Debug.Log("Все чекпоинты загружены");
+        OnCheckpointsLoaded?.Invoke(); // 🔔 Вызов события
     }
     public void ResetCheckpoints()
     {

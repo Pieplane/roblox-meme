@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using StarterAssets;
+using System;
 
 public class DialogueManager : MonoBehaviour
 {
@@ -26,6 +27,14 @@ public class DialogueManager : MonoBehaviour
 
     [SerializeField] private GameObject skipButton;
 
+    [SerializeField] private string[] dialogueTrackNames;
+
+    private int dialogueCallCount = 0;
+    private string lastPlayedTrack = null;
+
+    public NPCInteraction CurrentInteractingNPC { get; private set; }
+
+    public static event Action DialogClosed;
     private void Awake()
     {
         if(Instance == null)
@@ -41,21 +50,25 @@ public class DialogueManager : MonoBehaviour
     public void StartDialogue(Dialogue dialogue)
     {
         Debug.Log("Попытка запустить диалог");
+        
 
         if (IsDialogueActive)
         {
             Debug.Log("Диалог уже активен, игнорирую");
             return;
         }
-
+        
         //GameManager.Instance.TransitionToState(GameState.Dialogue);
         IsDialogueActive = true;
         dialogueUI.SetActive(true);
         ShowNode(dialogue.startNode);
+
+        
     }
 
     private void ShowNode(DialogueNode node)
     {
+
         currentNode = node;
         npcText.text = node.npcText;
 
@@ -73,6 +86,8 @@ public class DialogueManager : MonoBehaviour
             StopCoroutine(typingCoroutine);
 
         typingCoroutine = StartCoroutine(TypeTextAndShowChoices(node));
+
+        PlayDialogueTrack();
     }
     IEnumerator TypeTextAndShowChoices(DialogueNode node)
     {
@@ -120,6 +135,8 @@ public class DialogueManager : MonoBehaviour
     void OnChoiceSelected(PlayerChoice choice)
     {
         //Debug.Log("Выбран ответ: " + choice.choiceText);
+        AudioManager.Instance?.StopPlay(lastPlayedTrack);
+        AudioManager.Instance?.Play("Answer");
         if (choice.nextNode != null)
             ShowNode(choice.nextNode);
         else
@@ -139,6 +156,7 @@ public class DialogueManager : MonoBehaviour
         dialogueUI.SetActive(false);
         GameManager.Instance.TransitionToState(GameState.Playing);
         activeTimeline?.ResumeTimeline();
+        CloseDialog();
     }
     public void SetActiveTimeline(TimelineController controller)
     {
@@ -185,5 +203,35 @@ public class DialogueManager : MonoBehaviour
                     OnChoiceSelected(choice);
             });
         }
+    }
+    private void PlayDialogueTrack()
+    {
+        if (dialogueTrackNames == null || dialogueTrackNames.Length == 0)
+            return;
+
+        // Циклический индекс
+        int index = dialogueCallCount % dialogueTrackNames.Length;
+        string track = dialogueTrackNames[index];
+
+        // 🛑 Остановить предыдущий, если был
+        if (!string.IsNullOrEmpty(lastPlayedTrack))
+        {
+            AudioManager.Instance?.StopPlay(lastPlayedTrack);
+        }
+
+        // ▶️ Запустить новый трек
+        if (!string.IsNullOrEmpty(track))
+        {
+            AudioManager.Instance?.Play(track);
+            lastPlayedTrack = track; // сохранить для следующего раза
+        }
+
+        dialogueCallCount++;
+    }
+    public void CloseDialog()
+    {
+        //Debug.Log("✅ Диалог закрыт");
+        DialogClosed?.Invoke();
+        // Здесь может быть логика закрытия окна
     }
 }
